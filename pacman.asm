@@ -41,7 +41,7 @@
 # --- FUNÇÃO atualizar_fantasma ---
 # $17 : Direção atual do fantasma (entrada)
 # $18 : Passo real de movimento (1px ou 1 linha) e backup de $22
-# $3  : Sensor de colisão (2px ou 2 linhas à frente)
+# $3  : Sensor de colisão (2px ou 2 linhas �  frente)
 # $2  : Offset do primeiro canto de teste / resultado do lw de cor
 # $13 : Offset do segundo canto de teste (compartilhado com contador de desenho)
 # $24 : Endereço calculado para teste + nova direção após sortear (saída)
@@ -333,11 +333,20 @@ fase_limpa:
 	addi $2, $2, 1
 	sw   $2, 0($28)
 	li   $3, 3
-	beq  $2, $3, fim        # passou da fase 2 -> venceu, encerra
+	beq  $2, $3, fim_venceu        # passou da fase 2 -> venceu, encerra
+	
+	jal tela_you_win_prox         
+	jal timer
+	
 	j    tempo              # redesenha a próxima fase (já com FASE atualizada)
 
 # volta a posição inicial
 reiniciar:
+
+	jal tela_game_over
+	jal timer
+	
+
 # Apaga o Pac-Man da posi��o atual
     move $25, $7
     jal restaura_fundo
@@ -361,10 +370,28 @@ reiniciar:
     jal restaura_fundo
 
 volta:
-    j pmf
+    volta_com_mapa:
+	# CORRE��O AQUI: Em vez de ir para pmf, limpa a tela de preto e redesenha o mapa!
+	li $10, 32256
+	lui $8, 0x1001
+for_reiniciar: 
+	beq $10, $0, redesenhar_tudo
+	sw $21, 0($8)           # Pinta a tela de preto para tirar o "GAME OVER"
+	addi $8, $8, 4
+	addi $10, $10, -1
+	j for_reiniciar
+
+redesenhar_tudo:
+	j desenha
 
 	jal timer        # pequena pausa antes de recomeçar (opcional)
 	j game_loop
+	
+fim_venceu:
+	jal tela_you_win_final   # Mostra a tela de campe�o
+	jal timer
+	j fim
+	
 	
 #==============================================================================
 #ATUALIZAÇÃO DO FANTASMA (BORDAS REAIS + ANTICIPACAO DE 2PX)
@@ -378,7 +405,7 @@ atualizar_fantasma:
 
 	# 2. CALCULA PASSO REAL (1 PX) E PASSO DO SENSOR (2 PX À FRENTE)
 	# $18 = Movimento suave real (1 pixel ou 1 linha)
-	# $3  = Sensor de colisão (Olha 2 pixels ou 2 linhas à frente)
+	# $3  = Sensor de colisão (Olha 2 pixels ou 2 linhas �  frente)
 	# $2  = Canto/Extremidade Esquerda ou Superior de teste
 	# $13 = Canto/Extremidade Direita ou Inferior de teste
 	li $18, 0             
@@ -398,8 +425,8 @@ cantos_cima:
 cantos_baixo: 
 	li $18, 512           # Passo real: 1 linha para baixo
 	li $3, 1024           # Sensor: 2 linhas para baixo
-	li $2, 2552           # Perninha mais à esquerda (Pixel 2552)
-	li $13, 2576          # Perninha mais à direita (Pixel 2576)
+	li $2, 2552           # Perninha mais �  esquerda (Pixel 2552)
+	li $13, 2576          # Perninha mais �  direita (Pixel 2576)
 	j t_colisao_ext
 
 cantos_esq:   
@@ -647,6 +674,9 @@ jal A
 	j fim
 	
 fim:
+
+	
+	
 	addi $2, $0, 10
 	syscall
 	
@@ -970,13 +1000,13 @@ retornar:
 
 
 # time fantasma
-tim: 	addi $25, $0, 100000
+tim: 	addi $25, $0, 40000
 ft: 	beq $25, $0, fimt                  
         nop
         addi $25, $25, -1
         j ft
 fimt: jr $31
-timer: 	addi $25, $0, 1000000
+timer: 	addi $25, $0, 1500000
 # time tela branca
 fortim: beq $25, $0, fimtimer                  
         nop
@@ -990,7 +1020,7 @@ fimtimer: jr $31
 # Entrada: $25 = canto do sprite. Usa $2,$3,$4,$13,$24. (folha: jr $31)
 restaura_fundo:
 	li   $2, 7            # 7 linhas
-	addi $3, $25, -8      # começa 2 colunas à esquerda do canto
+	addi $3, $25, -8      # começa 2 colunas �  esquerda do canto
 rf_linha:
 	li   $4, 7            # 7 colunas
 	move $13, $3
@@ -1608,6 +1638,147 @@ loop_espera:
     li $28, 'c'
     bne $27, $28, loop_espera
     jr $31
+    
+# ----- TELA ADD ------- 
+    
+tela_you_win_prox:
+    addi $sp, $sp, -4
+    sw   $31, 0($sp)
+
+    lui  $5, 0x1001
+    li   $21, 0x000000
+    move $8, $5
+    li   $10, 8192
+yw_limpar:
+    beq  $10, $0, you_win
+    sw   $21, 0($8)
+    addi $8, $8, 4
+    addi $10, $10, -1
+    j yw_limpar
+
+you_win:
+    # ---- "YOU WIN" (tamanho grande, cor amarela) ----
+    li   $20, 0xFFFF00
+    addi $25, $5, 0x2E64      # linha 23, centralizado
+
+    jal  YG
+    addi $25, $25, 48
+    jal  OG
+    addi $25, $25, 48
+    jal  UG
+    addi $25, $25, 68         # espa�o
+    jal  WG
+    addi $25, $25, 48
+    jal  IG
+    addi $25, $25, 40
+    jal  NG
+
+    # ---- "PROXIMA FASE" (tamanho pequeno, cor branca) ----
+    li   $20, 0xFFFFFF
+    addi $25, $5, 0x4864      # linha 36, centralizado
+
+    jal  P
+    addi $25, $25, 24
+    jal  R
+    addi $25, $25, 24
+    jal  O
+    addi $25, $25, 24
+    jal  X
+    addi $25, $25, 24
+    jal  I
+    addi $25, $25, 24
+    jal  M
+    addi $25, $25, 24
+    jal  A
+    addi $25, $25, 48         # espa�o
+    jal  F
+    addi $25, $25, 24
+    jal  A
+    addi $25, $25, 24
+    jal  S
+    addi $25, $25, 24
+    jal  E
+
+    lw   $31, 0($sp)
+    addi $sp, $sp, 4
+    jr   $31
+    
+# ---------------------
+tela_game_over:
+    addi $sp, $sp, -4
+    sw   $31, 0($sp)
+
+    lui  $5, 0x1001
+    li   $21, 0x000000
+    move $8, $5
+    li   $10, 8192
+go_limpar:
+    beq  $10, $0, game_over
+    sw   $21, 0($8)
+    addi $8, $8, 4
+    addi $10, $10, -1
+    j    go_limpar
+
+game_over:
+    li   $20, 0xFF0000        # vermelho
+    addi $25, $5, 0x3838      # linha 28, centralizado
+
+    jal  GG
+    addi $25, $25, 48
+    jal  AG
+    addi $25, $25, 48
+    jal  MG
+    addi $25, $25, 48
+    jal  EG
+    addi $25, $25, 88         # espa�o
+    jal  OG
+    addi $25, $25, 48
+    jal  VG
+    addi $25, $25, 48
+    jal  EG
+    addi $25, $25, 48
+    jal  RG
+
+    lw   $31, 0($sp)
+    addi $sp, $sp, 4
+    jr   $31
+    
+# -------------------------------- 
+tela_you_win_final:
+    addi $sp, $sp, -4
+    sw   $31, 0($sp)
+
+    lui  $5, 0x1001
+    li   $21, 0x000000
+    move $8, $5
+    li   $10, 8192
+ywf_limpar:
+    beq  $10, $0, you_win_final
+    sw   $21, 0($8)
+    addi $8, $8, 4
+    addi $10, $10, -1
+    j    ywf_limpar
+
+you_win_final:
+    li   $20, 0xFFFF00
+    addi $25, $5, 0x3860
+
+    jal  YG
+    addi $25, $25, 48
+    jal  OG
+    addi $25, $25, 48
+    jal  UG
+    addi $25, $25, 96         # espa�o
+    jal  WG
+    addi $25, $25, 48
+    jal  IG
+    addi $25, $25, 48
+    jal  NG
+
+    lw   $31, 0($sp)
+    addi $sp, $sp, 4
+    jr   $31
+    
 ###################
 #letras
 cima:
@@ -1989,4 +2160,190 @@ NG:
     sw $20,3072($25)
     sw $20,3088($25)
     jr $31
-    
+   
+# LETRAS ADICIONAIS
+
+# ---- LETRAS PEQUENAS NOVAS (para proxima fase)
+F:
+    sw $20,   0($25)
+    sw $20,   4($25)
+    sw $20,   8($25)
+    sw $20, 512($25)
+    sw $20,1024($25)
+    sw $20,1028($25)
+    sw $20,1536($25)
+    sw $20,2048($25)
+    jr $31
+
+X:
+    sw $20,   0($25)
+    sw $20,   8($25)
+    sw $20, 516($25)
+    sw $20,1028($25)
+    sw $20,1540($25)
+    sw $20,2048($25)
+    sw $20,2056($25)
+    jr $31
+
+# ----- LETRAS GRANDES NOVAS ( para GAME OVER e YOU WIN)
+OG:
+    sw $20,   0($25)
+    sw $20,   4($25)
+    sw $20,   8($25)
+    sw $20,  12($25)
+    sw $20, 512($25)
+    sw $20, 524($25)
+    sw $20,1024($25)
+    sw $20,1036($25)
+    sw $20,1536($25)
+    sw $20,1548($25)
+    sw $20,2048($25)
+    sw $20,2060($25)
+    sw $20,2560($25)
+    sw $20,2572($25)
+    sw $20,3072($25)
+    sw $20,3076($25)
+    sw $20,3080($25)
+    sw $20,3084($25)
+    jr $31
+
+EG:
+    sw $20,   0($25)
+    sw $20,   4($25)
+    sw $20,   8($25)
+    sw $20,  12($25)
+    sw $20, 512($25)
+    sw $20,1024($25)
+    sw $20,1536($25)
+    sw $20,1540($25)
+    sw $20,1544($25)
+    sw $20,2048($25)
+    sw $20,2560($25)
+    sw $20,3072($25)
+    sw $20,3076($25)
+    sw $20,3080($25)
+    sw $20,3084($25)
+    jr $31
+
+GG:
+    sw $20,   0($25)
+    sw $20,   4($25)
+    sw $20,   8($25)
+    sw $20,  12($25)
+    sw $20, 512($25)
+    sw $20,1024($25)
+    sw $20,1536($25)
+    sw $20,1544($25)
+    sw $20,1548($25)
+    sw $20,2048($25)
+    sw $20,2060($25)
+    sw $20,2560($25)
+    sw $20,2572($25)
+    sw $20,3072($25)
+    sw $20,3076($25)
+    sw $20,3080($25)
+    sw $20,3084($25)
+    jr $31
+
+VG:
+    sw $20,    0($25)
+    sw $20,   16($25)
+    sw $20,  512($25)
+    sw $20,  528($25)
+    sw $20, 1024($25)
+    sw $20, 1040($25)
+    sw $20, 1540($25)
+    sw $20, 1548($25)
+    sw $20, 2052($25)
+    sw $20, 2060($25)
+    sw $20, 2564($25)
+    sw $20, 2572($25)
+    sw $20, 3080($25)
+    jr $31
+
+RG:
+    sw $20,   0($25)
+    sw $20,   4($25)
+    sw $20,   8($25)
+    sw $20,  12($25)
+    sw $20, 512($25)
+    sw $20, 524($25)
+    sw $20,1024($25)
+    sw $20,1036($25)
+    sw $20,1536($25)
+    sw $20,1540($25)
+    sw $20,1544($25)
+    sw $20,1548($25)
+    sw $20,2048($25)
+    sw $20,2056($25)
+    sw $20,2560($25)
+    sw $20,2572($25)
+    sw $20,3072($25)
+    sw $20,3084($25)
+    jr $31
+
+YG:
+    sw $20,   0($25)
+    sw $20,  16($25)
+    sw $20, 512($25)
+    sw $20, 528($25)
+    sw $20,1028($25)
+    sw $20,1036($25)
+    sw $20,1544($25)
+    sw $20,2056($25)
+    sw $20,2568($25)
+    sw $20,3080($25)
+    jr $31
+
+UG:
+    sw $20,   0($25)
+    sw $20,  12($25)
+    sw $20, 512($25)
+    sw $20, 524($25)
+    sw $20,1024($25)
+    sw $20,1036($25)
+    sw $20,1536($25)
+    sw $20,1548($25)
+    sw $20,2048($25)
+    sw $20,2060($25)
+    sw $20,2560($25)
+    sw $20,2572($25)
+    sw $20,3072($25)
+    sw $20,3076($25)
+    sw $20,3080($25)
+    sw $20,3084($25)
+    jr $31
+
+WG:
+    sw $20,   0($25)
+    sw $20,  16($25)
+    sw $20, 512($25)
+    sw $20, 528($25)
+    sw $20,1024($25)
+    sw $20,1040($25)
+    sw $20,1536($25)
+    sw $20,1544($25)
+    sw $20,1552($25)
+    sw $20,2048($25)
+    sw $20,2052($25)
+    sw $20,2060($25)
+    sw $20,2064($25)
+    sw $20,2560($25)
+    sw $20,2576($25)
+    sw $20,3072($25)
+    sw $20,3088($25)
+    jr $31
+
+IG:
+    sw $20,   0($25)
+    sw $20,   4($25)
+    sw $20,   8($25)
+    sw $20, 516($25)
+    sw $20,1028($25)
+    sw $20,1540($25)
+    sw $20,2052($25)
+    sw $20,2564($25)
+    sw $20,3076($25)
+    sw $20,3072($25)
+    sw $20,3080($25)
+    jr $31
